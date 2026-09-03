@@ -43,10 +43,10 @@ export default class GameScene extends Phaser.Scene {
         this.player = new Tank(this, {
             x: 700,
             y: 700,
-            hullTexture: 'hull_03',
-            gunTexture: 'gun_04',
+            hullTexture: 'hull_04',
+            gunTexture: 'gun_08',
 
-            hullType: '01',
+            hullType: '04',
             gunType: '01',
             trackTextures: ['track_1A', 'track_1B'],
             team: 'player',

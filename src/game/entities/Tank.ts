@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { tanksParams } from '../config/tankParams';
 import Projectile from './Projectile';
+import type { IGun } from './Guns/Gun';
+import SimpleGun from './Guns/SimpleGun';
 
 export interface ITankProps {
     x: number;
@@ -24,7 +26,7 @@ export default class Tank extends Phaser.GameObjects.Container {
     declare body: MatterJS.BodyType;
 
     private hull: Phaser.GameObjects.Sprite;
-    private gun: Phaser.GameObjects.Sprite;
+    private gun: IGun;
 
     private trackLeft: Phaser.GameObjects.Sprite;
     private trackRight: Phaser.GameObjects.Sprite;
@@ -34,24 +36,35 @@ export default class Tank extends Phaser.GameObjects.Container {
     private trackAnimInterval = 120;
     private trackAnimSpeedThreshold = 0.05;
 
-    private gunAngle = 0;
     private gunLocalMuzzleY: number; // локальный y дула относительно origin gun-спрайта
 
     public team: string;
     public bulletTexture: string;
     public bulletSpeed: number;
     public damage: number;
-    public reloadTime: number;
-    private reloadTimer = 0;
 
     public moveSpeed = 600;
     public rotationSpeed = 2;
-    public gunRotationSpeed = 4;
-
-    private recoilForce = 0.015;
 
     private gunMountOffsetX: number;
     private gunMountOffsetY: number;
+
+    private hpBarColor: number;
+    private hpBarBgColor: number;
+    private recoilBarColor: number = 0x00ff00;
+    private recoilBarBgColor: number = 0x008800;
+
+    private hpBarBg!: Phaser.GameObjects.Graphics;
+    private hpBar!: Phaser.GameObjects.Graphics;
+    private recoilBar!: Phaser.GameObjects.Graphics;
+    private recoilBarBg!: Phaser.GameObjects.Graphics;
+
+    private health: number;
+    private maxHealth: number;
+
+    public getHealth(): number {
+        return this.health;
+    }
 
     constructor(scene: Phaser.Scene, props: ITankProps) {
         super(scene, props.x, props.y);
@@ -62,7 +75,9 @@ export default class Tank extends Phaser.GameObjects.Container {
         this.bulletTexture = props.bulletTexture;
         this.bulletSpeed = props.bulletSpeed ?? 900;
         this.damage = props.damage ?? 10;
-        this.reloadTime = props.reloadTime ?? 800;
+
+        this.maxHealth = 100;
+        this.health = this.maxHealth;
 
         this.trackTextures = props.trackTextures;
 
@@ -84,15 +99,16 @@ export default class Tank extends Phaser.GameObjects.Container {
 
         const { gun: gunParams } = tanksParams[props.gunType];
 
-        this.gun = new Phaser.GameObjects.Sprite(scene, 0, 0, props.gunTexture);
-        this.gun.setOrigin(
-            gunParams.center.x / this.gun.width,
-            gunParams.center.y / this.gun.height
-        );
-
         this.gunMountOffsetX = hullParams.center.x - bodyCenterX;
         this.gunMountOffsetY = hullParams.center.y - bodyCenterY;
-        this.gun.setPosition(this.gunMountOffsetX, this.gunMountOffsetY);
+
+        this.gun = new SimpleGun(scene, {
+            gunPosition: {
+                x: this.gunMountOffsetX,
+                y: this.gunMountOffsetY
+            }
+        })
+
 
         // локальная (до поворота) координата дула относительно origin gun-спрайта
         this.gunLocalMuzzleY = gunParams.border.y - gunParams.center.y;
@@ -109,6 +125,12 @@ export default class Tank extends Phaser.GameObjects.Container {
         this.trackLeft.setDisplaySize(track.w, track.h);
 
         this.add([this.trackLeft, this.trackRight, this.hull, this.gun]);
+
+        this.hpBarColor = this.team === 'player' ? 0x0000ff : 0xff0000;
+        this.hpBarBgColor = this.team === 'player' ? 0x000088 : 0x880000;
+
+        this.createHPBar();
+        this.createRecoilBar();
 
         scene.matter.add.gameObject(this, {
             shape: { type: 'rectangle', width: bWidth, height: bHeight },
@@ -137,13 +159,11 @@ export default class Tank extends Phaser.GameObjects.Container {
     }
 
     public rotateGun(direction: number, delta: number) {
-        const dt = delta / 1000;
-        this.gunAngle += direction * this.gunRotationSpeed * dt;
-        this.gun.setRotation(this.gunAngle);
+        this.gun.rotateGun(direction, delta);
     }
 
     public getGunWorldAngle(): number {
-        return this.rotation + this.gunAngle;
+        return this.rotation + this.gun.getRotation();
     }
 
     /** Поворачивает локальную точку (lx, ly) на угол angle и сдвигает на (originX, originY) */
@@ -170,7 +190,7 @@ export default class Tank extends Phaser.GameObjects.Container {
         );
 
         // 2) точка дула относительно точки крепления, повёрнутая на суммарный угол (корпус + пушка)
-        const totalAngle = this.rotation + this.gunAngle;
+        const totalAngle = this.rotation + this.gun.getRotation();
 
         return Tank.rotateAndOffset(
             0, this.gunLocalMuzzleY,
@@ -179,44 +199,50 @@ export default class Tank extends Phaser.GameObjects.Container {
         );
     }
 
-    public canFire(): boolean {
-        return this.reloadTimer <= 0;
-    }
-
     public fire(): Projectile | null {
-        if (!this.canFire()) return null;
-
-        this.reloadTimer = this.reloadTime;
+        if (!this.gun.canFire()) return null;
 
         const muzzle = this.getMuzzleWorldPoint();
         const worldAngle = this.getGunWorldAngle();
 
-        const projectile = new Projectile(this.scene, {
-            x: muzzle.x,
-            y: muzzle.y,
-            angle: worldAngle,
-            speed: this.bulletSpeed,
-            damage: this.damage,
-            owner: this,
-            team: this.team,
-            texture: this.bulletTexture,
-            impulseForce: 2,
-            size: 16,
-        });
+        // const projectile = new Projectile(this.scene, {
+        //     x: muzzle.x,
+        //     y: muzzle.y,
+        //     angle: worldAngle,
+        //     speed: this.bulletSpeed,
+        //     damage: this.damage,
+        //     owner: this,
+        //     team: this.team,
+        //     texture: this.bulletTexture,
+        //     impulseForce: 2,
+        //     size: 16,
+        // });
 
-        // откат — импульс на сам танк в обратную сторону выстрела
-        const dirAngle = worldAngle - Math.PI / 2;
-        this.scene.matter.body.applyForce(this.body, this.body.position, {
-            x: -Math.cos(dirAngle) * this.recoilForce,
-            y: -Math.sin(dirAngle) * this.recoilForce,
-        });
+        this.gun.fire(
+            muzzle.x, muzzle.y,
+            worldAngle, this.team,
+            this
+        );
 
-        return projectile;
+        // // откат — импульс на сам танк в обратную сторону выстрела
+        // const dirAngle = worldAngle - Math.PI / 2;
+        // this.scene.matter.body.applyForce(this.body, this.body.position, {
+        //     x: -Math.cos(dirAngle) * this.recoilForce,
+        //     y: -Math.sin(dirAngle) * this.recoilForce,
+        // });
+
+        // return projectile;
     }
 
     public takeDamage(amount: number) {
         // заглушка под будущую систему здоровья
         console.log(`${this.team} tank took ${amount} damage`);
+        this.health -= amount;
+        if (this.health <= 0) {
+            this.health = 0;
+            this.destroy(true);
+        }
+        this.updateHPBar();
     }
 
     public applyImpulse(forceX: number, forceY: number, atPoint?: MatterJS.Vector) {
@@ -232,9 +258,8 @@ export default class Tank extends Phaser.GameObjects.Container {
     }
 
     public update(_time: number, delta: number) {
-        if (this.reloadTimer > 0) {
-            this.reloadTimer -= delta;
-        }
+        this.gun.update(_time, delta);
+        this.updateRecoilBar();
 
         const speed = this.body.speed + Math.abs(this.body.angularVelocity) * 20;
 
@@ -249,5 +274,68 @@ export default class Tank extends Phaser.GameObjects.Container {
                 this.trackLeft.setTexture(this.trackTextures[1 - this.trackFrame]);
             }
         }
+
+    }
+
+    private createHPBar(): void {
+        const barWidth: number = 90;
+        const barHeight: number = 10;
+        const offsetY: number = 50;
+        // Фон полоски HP
+        if (!this.hpBarBg) {
+            this.hpBarBg = this.scene.add.graphics();
+        }
+        this.hpBarBg.fillStyle(this.hpBarBgColor, 1);
+        this.hpBarBg.fillRect(-barWidth / 2, offsetY, barWidth, barHeight);
+
+        // Активная полоска HP
+        if (!this.hpBar) {
+            this.hpBar = this.scene.add.graphics();
+        }
+        this.hpBar.fillStyle(this.hpBarColor, 1);
+        this.hpBar.fillRect(-barWidth / 2, offsetY, barWidth, barHeight);
+
+        this.add(this.hpBarBg);
+        this.add(this.hpBar);
+    }
+
+    private createRecoilBar(): void {
+        const barWidth: number = 90;
+        const barHeight: number = 10;
+        const offsetY: number = 65;
+        // Фон полоски HP
+        if (!this.recoilBarBg) {
+            this.recoilBarBg = this.scene.add.graphics();
+        }
+        this.recoilBarBg.fillStyle(this.recoilBarBgColor, 1);
+        this.recoilBarBg.fillRect(-barWidth / 2, offsetY, barWidth, barHeight);
+
+        // Активная полоска RECOIL
+        if (!this.recoilBar) {
+            this.recoilBar = this.scene.add.graphics();
+        }
+        this.recoilBar.fillStyle(this.recoilBarColor, 1);
+        this.recoilBar.fillRect(-barWidth / 2, offsetY, barWidth, barHeight);
+
+        this.add(this.recoilBarBg);
+        this.add(this.recoilBar);
+    }
+
+    private updateRecoilBar(): void {
+        const barWidth: number = 90;
+        const barHeight: number = 10;
+        const offsetY: number = 65;
+        this.recoilBar.clear();
+        this.recoilBar.fillStyle(this.recoilBarColor, 1);
+        this.recoilBar.fillRect(-barWidth / 2, offsetY, barWidth * (1 - this.gun.getReloadProgress()), barHeight);
+    }
+
+    private updateHPBar(): void {
+        const barWidth: number = 90;
+        const barHeight: number = 10;
+        const offsetY: number = 50;
+        this.hpBar.clear();
+        this.hpBar.fillStyle(this.hpBarColor, 1);
+        this.hpBar.fillRect(-barWidth / 2, offsetY, barWidth * this.health / this.maxHealth, barHeight);
     }
 }
