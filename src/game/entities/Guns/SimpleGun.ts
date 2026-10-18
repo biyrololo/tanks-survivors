@@ -1,91 +1,99 @@
-import { tanksParams } from "@/game/config/tankParams";
 import Projectile from "../Projectile";
-import type { IGun, IGunProps } from "./Gun";
-import Phaser from "phaser";
+import BaseGun from "./BaseGun";
+import type { IGunProps, GunResourceType } from "./Gun";
+import { CHARACTERISTICS_GUNS } from "@/game/config/characteristics";
+import type Tank from "../Tank";
 
-export default class SimpleGun extends Phaser.GameObjects.Container implements IGun {
-    private reloadTime: number;
+export interface ISimpleGunProps extends IGunProps {
+    ownerTank: Tank;
+    damage?: number;
+    bulletSpeed?: number;
+    bulletTexture?: string;
+    reloadTimeMs?: number;
+}
+
+export default class SimpleGun extends BaseGun {
+    private reloadTime: number; // in milliseconds
     private reloadTimer = 0;
 
-    private bulletSpeed: number = 900;
-    private damage: number = 10;
+    private bulletSpeed: number = 1500; // px/sec (original: 25 px/frame @ 60fps = 1500 px/s)
+    private damage: number = 30; // original: 30
     private bulletTexture: string = 'bullet';
+    private ownerTank: Tank;
 
-    private gun: Phaser.GameObjects.Sprite;
+    constructor(scene: Phaser.Scene, props: ISimpleGunProps) {
+        const textureKey = `gun_${props.gunType}`;
+        super(scene, props, textureKey);
 
-    private gunAngle = 0;
-    public gunRotationSpeed = 4;
+        this.ownerTank = props.ownerTank;
 
-    public getRotation(): number {
-        return this.gunAngle;
-    }
+        const char = CHARACTERISTICS_GUNS[props.gunType] ?? CHARACTERISTICS_GUNS['01'];
+        this.damage = props.damage ?? char.playerDamage;
 
-    constructor(scene: Phaser.Scene, props: IGunProps) {
-        super(scene, 0, 0);
-        this.reloadTime = 1000;
-        this.gun = new Phaser.GameObjects.Sprite(scene, 0, 0, 'gun_01');
+        // In original game: 50 frames @ 60fps = ~833ms
+        const frames = char.playerReloadTimeFrames;
+        this.reloadTime = props.reloadTimeMs ?? Math.round((frames / 60) * 1000);
 
-        const { gun: gunParams } = tanksParams['01'];
-
-        this.gun.setOrigin(
-            gunParams.center.x / this.gun.width,
-            gunParams.center.y / this.gun.height
-        );
-        this.gun.setPosition(props.gunPosition.x, props.gunPosition.y);
-        this.add(this.gun);
-
-        scene.add.existing(this);
-    }
-
-    public rotateGun(direction: number, delta: number) {
-        const dt = delta / 1000;
-        this.gunAngle += direction * this.gunRotationSpeed * dt;
-        this.gun.setRotation(this.gunAngle);
-    }
-
-    public getReloadTime(): number {
-        return this.reloadTimer;
+        if (props.bulletSpeed) this.bulletSpeed = props.bulletSpeed;
+        if (props.bulletTexture) this.bulletTexture = props.bulletTexture;
     }
 
     public canFire(): boolean {
         return this.reloadTimer <= 0;
     }
 
-    public fire(
-        x: number,
-        y: number,
-        angle: number,
-        team: string,
-        owner: Phaser.GameObjects.GameObject
-    ): void {
-        if (!this.canFire()) return;
-
-        this.reloadTimer = this.reloadTime;
-
-        new Projectile(this.scene, {
-            x: x,
-            y: y,
-            angle: angle,
-            speed: this.bulletSpeed,
-            damage: this.damage,
-            owner,
-            team,
-            texture: this.bulletTexture,
-            impulseForce: 2,
-            size: 16,
-        });
+    public getResourceProgress(): number {
+        return this.reloadTimer / this.reloadTime;
     }
 
-    public update(_time: number, delta: number): void {
+    public getResourceType(): GunResourceType {
+        return 'cooldown';
+    }
+
+    protected override onTriggerDown(): void {
+        this.tryFire();
+    }
+
+    private tryFire(): boolean {
+        if (!this.canFire()) return false;
+
+        this.reloadTimer = this.reloadTime;
+        this.triggerRecoil();
+
+        const muzzles = this.getMuzzleWorldPoints();
+        const worldAngle = this.ownerTank.rotation + this.gunAngle;
+
+        for (const muzzle of muzzles) {
+            new Projectile(this.scene, {
+                x: muzzle.x,
+                y: muzzle.y,
+                angle: worldAngle,
+                speed: this.bulletSpeed,
+                damage: this.damage,
+                owner: this.ownerTank,
+                team: this.ownerTank.team,
+                texture: this.bulletTexture,
+                impulseForce: 2,
+                size: 16,
+            });
+        }
+
+        return true;
+    }
+
+    public override update(_time: number, delta: number): void {
+        super.update(_time, delta);
+
         if (this.reloadTimer > 0) {
             this.reloadTimer -= delta;
             if (this.reloadTimer < 0) {
                 this.reloadTimer = 0;
             }
         }
-    }
 
-    public getReloadProgress(): number {
-        return this.reloadTimer / this.reloadTime;
+        // If trigger is held down, auto-fire as soon as cooldown finishes
+        if (this.isTriggerDown && this.reloadTimer <= 0) {
+            this.tryFire();
+        }
     }
 }

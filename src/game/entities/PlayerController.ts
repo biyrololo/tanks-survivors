@@ -10,6 +10,8 @@ export default class PlayerController {
         Z: Phaser.Input.Keyboard.Key;
         X: Phaser.Input.Keyboard.Key;
         SPACE: Phaser.Input.Keyboard.Key;
+        LEFT: Phaser.Input.Keyboard.Key;
+        RIGHT: Phaser.Input.Keyboard.Key;
     };
 
     constructor(
@@ -22,8 +24,10 @@ export default class PlayerController {
             A: Phaser.Input.Keyboard.KeyCodes.A,
             D: Phaser.Input.Keyboard.KeyCodes.D,
             Z: Phaser.Input.Keyboard.KeyCodes.Z,
+            X: Phaser.Input.Keyboard.KeyCodes.X,
             SPACE: Phaser.Input.Keyboard.KeyCodes.SPACE,
-            X: Phaser.Input.Keyboard.KeyCodes.X
+            LEFT: Phaser.Input.Keyboard.KeyCodes.LEFT,
+            RIGHT: Phaser.Input.Keyboard.KeyCodes.RIGHT
         }) as typeof this.keys;
     }
 
@@ -44,17 +48,15 @@ export default class PlayerController {
             this.tank.rotateHull(1);
         }
 
-        if (this.keys.Z.isDown) {
+        if (this.keys.Z.isDown || this.keys.LEFT.isDown) {
             this.tank.rotateGun(-1, delta);
         }
 
-        if (this.keys.X.isDown) {
+        if (this.keys.X.isDown || this.keys.RIGHT.isDown) {
             this.tank.rotateGun(1, delta);
         }
 
-        if (this.keys.SPACE.isDown) {
-            this.tank.fire();
-        }
+        this.tank.setTrigger(this.keys.SPACE.isDown);
     }
-
 }
+
