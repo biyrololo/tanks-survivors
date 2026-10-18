@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import { tanksParams } from '../config/tankParams';
-import Projectile from './Projectile';
 import type { IGun } from './Guns/Gun';
 import SimpleGun from './Guns/SimpleGun';
 
@@ -199,8 +198,8 @@ export default class Tank extends Phaser.GameObjects.Container {
         );
     }
 
-    public fire(): Projectile | null {
-        if (!this.gun.canFire()) return null;
+    public fire(): void {
+        if (!this.gun.canFire()) return;
 
         const muzzle = this.getMuzzleWorldPoint();
         const worldAngle = this.getGunWorldAngle();
@@ -240,16 +239,19 @@ export default class Tank extends Phaser.GameObjects.Container {
         this.health -= amount;
         if (this.health <= 0) {
             this.health = 0;
+            this.emit('tank-destroyed', this);
             this.destroy(true);
         }
         this.updateHPBar();
     }
 
     public applyImpulse(forceX: number, forceY: number, atPoint?: MatterJS.Vector) {
+        if (!this.body) return;
         this.scene.matter.body.applyForce(this.body, atPoint ?? this.body.position, { x: forceX, y: forceY });
     }
 
     public applyKnockback(vx: number, vy: number) {
+        if (!this.body) return;
         const currentVel = this.body.velocity;
         this.scene.matter.body.setVelocity(this.body, {
             x: currentVel.x + vx,

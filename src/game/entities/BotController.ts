@@ -1,15 +1,13 @@
-import Phaser from "phaser";
 import type Tank from "./Tank";
 
 export default class BotController {
-    constructor(
-        private tank: Tank,
-    ) {
+    public tank: Tank;
 
+    constructor(tank: Tank) {
+        this.tank = tank;
     }
 
-    public update(
-        delta: number,
-        enemies: Tank[]
-    ) { }
+    public update(_delta: number, _enemies: Tank[]) {
+        // Will be implemented in AI Phase
+    }
 }

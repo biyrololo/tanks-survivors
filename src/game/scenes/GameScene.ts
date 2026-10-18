@@ -2,8 +2,6 @@ import Phaser from 'phaser';
 
 import bg from '@/assets/map2.png';
 import Tank from '../entities/Tank';
-import hull from '@/assets/Color_A/Hull_01.png'
-import gun from '@/assets/Color_A/Gun_01.png'
 import PlayerController from '../entities/PlayerController';
 import { guns, hulls } from '@/assets/Color_A';
 import { tracks } from '@/assets/Tracks';
@@ -87,6 +85,8 @@ export default class GameScene extends Phaser.Scene {
                 if (!projectile || !(target instanceof Tank)) continue;
                 if (projectile.owner === target) continue; // не бьём себя своим же снарядом
 
+                if (!target.active) continue;
+
                 if (!projectile.team || projectile.team !== target.team) {
                     target.takeDamage(projectile.damage);
 
@@ -102,10 +102,17 @@ export default class GameScene extends Phaser.Scene {
             }
         });
 
+        this.entities.forEach(tank => {
+            tank.on('tank-destroyed', (t: Tank) => {
+                this.entities = this.entities.filter(e => e !== t);
+            });
+        })
     }
 
     update(time: number, delta: number) {
-        this.playerController.update(delta)
+        this.playerController.update(delta);
+
+        this.entities = this.entities.filter(e => e.active);
 
         this.entities.forEach(e => e.update(time, delta))
     }
