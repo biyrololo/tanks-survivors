@@ -82,13 +82,36 @@ export default class GameScene extends Phaser.Scene {
                     goA instanceof Projectile ? [goA, goB] :
                         goB instanceof Projectile ? [goB, goA] : [null, null];
 
-                if (!projectile || !(target instanceof Tank)) continue;
-                if (projectile.owner === target) continue; // не бьём себя своим же снарядом
+                if (!projectile) continue;
 
+                // Handle obstacle / wall hit
+                if (!(target instanceof Tank)) {
+                    projectile.onWallBounce();
+                    continue;
+                }
+
+                if (projectile.owner === target) continue; // не бьём себя своим же снарядом
                 if (!target.active) continue;
 
                 if (!projectile.team || projectile.team !== target.team) {
                     target.takeDamage(projectile.damage);
+
+                    // Apply status effects (e.g. Freeze chilling)
+                    if (projectile.statusEffect) {
+                        target.applyTemperature(projectile.statusEffect.amount);
+                    }
+
+                    // Apply AoE Splash Damage (Thunder gun 07)
+                    if (projectile.splashRadius && projectile.splashRadius > 0) {
+                        for (const otherTank of this.entities) {
+                            if (otherTank === target || !otherTank.active) continue;
+                            if (otherTank.team === projectile.team) continue;
+                            const dist = Phaser.Math.Distance.Between(projectile.x, projectile.y, otherTank.x, otherTank.y);
+                            if (dist <= projectile.splashRadius) {
+                                otherTank.takeDamage(projectile.damage);
+                            }
+                        }
+                    }
 
                     const vel = projectile.body.velocity;
                     const speedLen = Math.hypot(vel.x, vel.y) || 1;
@@ -101,6 +124,7 @@ export default class GameScene extends Phaser.Scene {
                 projectile.destroy();
             }
         });
+
 
         this.entities.forEach(tank => {
             tank.on('tank-destroyed', (t: Tank) => {

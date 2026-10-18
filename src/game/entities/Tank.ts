@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { tanksParams } from '../config/tankParams';
 import { CHARACTERISTICS_HULLS, MAX_SPEED } from '../config/characteristics';
 import type { IGun } from './Guns/Gun';
-import SimpleGun from './Guns/SimpleGun';
+import { GunFactory } from './Guns/GunFactory';
 
 export interface ITankProps {
     x: number;
@@ -129,8 +129,8 @@ export default class Tank extends Phaser.GameObjects.Container {
         this.gunMountOffsetX = hullParams.center.x - bodyCenterX;
         this.gunMountOffsetY = hullParams.center.y - bodyCenterY;
 
-        // Create gun with owner reference
-        this.gun = new SimpleGun(scene, {
+        // Create gun via GunFactory with owner reference
+        this.gun = GunFactory.create(scene, {
             gunType: this.gunType,
             gunPosition: {
                 x: this.gunMountOffsetX,
@@ -142,6 +142,7 @@ export default class Tank extends Phaser.GameObjects.Container {
             bulletTexture: this.bulletTexture,
             reloadTimeMs: props.reloadTime
         });
+
 
         // Tracks offset from tankParams
         const track = hullParams.track;
@@ -217,6 +218,27 @@ export default class Tank extends Phaser.GameObjects.Container {
     public fire() {
         this.gun.setTrigger(true);
     }
+
+    public equipGun(newGunType: string): void {
+        const currentAngle = this.gun.getRotation();
+        this.remove(this.gun as unknown as Phaser.GameObjects.GameObject, true);
+
+        this.gun = GunFactory.create(this.scene, {
+            gunType: newGunType,
+            gunPosition: {
+                x: this.gunMountOffsetX,
+                y: this.gunMountOffsetY
+            },
+            ownerTank: this,
+            bulletSpeed: this.bulletSpeed,
+            damage: this.damage,
+            bulletTexture: this.bulletTexture
+        });
+
+        this.gun.setGunRotation(currentAngle);
+        this.add(this.gun as unknown as Phaser.GameObjects.GameObject);
+    }
+
 
     /**
      * Applies temperature delta (positive = heat/burn, negative = chill/freeze)
