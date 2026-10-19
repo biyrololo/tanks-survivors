@@ -24,13 +24,10 @@ export default class RicochetGun extends BaseGun {
     private bulletSpeed: number = 1200; // 20 px/frame @ 60fps = 1200 px/s (index.js:167)
     private damage: number = 30; // index.js:1252, 2917
     private bulletTexture: string = 'bullet';
-    private ownerTank: Tank;
 
     constructor(scene: Phaser.Scene, props: IRicochetGunProps) {
         const textureKey = `gun_${props.gunType}`;
         super(scene, props, textureKey);
-
-        this.ownerTank = props.ownerTank;
         if (props.damage) this.damage = props.damage;
         if (props.bulletSpeed) this.bulletSpeed = props.bulletSpeed;
         if (props.bulletTexture) this.bulletTexture = props.bulletTexture;

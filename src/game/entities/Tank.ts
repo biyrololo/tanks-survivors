@@ -27,7 +27,7 @@ export default class Tank extends Phaser.GameObjects.Container {
     declare body: MatterJS.BodyType;
 
     public readonly hullType: string;
-    public readonly gunType: string;
+    public gunType: string;
 
     private hull: Phaser.GameObjects.Sprite;
     private gun: IGun;
@@ -220,6 +220,7 @@ export default class Tank extends Phaser.GameObjects.Container {
     }
 
     public equipGun(newGunType: string): void {
+        this.gunType = newGunType;
         const currentAngle = this.gun.getRotation();
         this.remove(this.gun as unknown as Phaser.GameObjects.GameObject, true);
 
@@ -237,6 +238,50 @@ export default class Tank extends Phaser.GameObjects.Container {
 
         this.gun.setGunRotation(currentAngle);
         this.add(this.gun as unknown as Phaser.GameObjects.GameObject);
+    }
+
+    /**
+     * Calculates the exact world coordinates of a point on the gun barrel / muzzle tip.
+     * Takes into account tank world position, hull rotation, turret mount offset,
+     * and total gun aim angle (hull rotation + gun relative angle).
+     *
+     * @param localOffsetX Offset perpendicular to gun barrel (e.g. for twin barrels)
+     * @param localOffsetY Offset along gun barrel (defaults to gunParams.border.y - gunParams.center.y)
+     */
+    public getMuzzleWorldPoint(localOffsetX: number = 0, localOffsetY?: number): Phaser.Math.Vector2 {
+        const cosHull = Math.cos(this.rotation);
+        const sinHull = Math.sin(this.rotation);
+
+        // 1. Mount point in world space rotated by hull rotation
+        const mountX = this.x + (this.gunMountOffsetX * cosHull - this.gunMountOffsetY * sinHull);
+        const mountY = this.y + (this.gunMountOffsetX * sinHull + this.gunMountOffsetY * cosHull);
+
+        // 2. Total barrel aim angle
+        const totalAngle = this.rotation + this.gun.getRotation();
+        const cosTotal = Math.cos(totalAngle);
+        const sinTotal = Math.sin(totalAngle);
+
+        // 3. Local muzzle offset along barrel
+        const { gun: gunParams } = tanksParams[this.gunType] ?? tanksParams['01'];
+        const muzzleDistY = localOffsetY ?? (gunParams.border.y - gunParams.center.y);
+
+        // 4. Muzzle world coordinate
+        return new Phaser.Math.Vector2(
+            mountX + (localOffsetX * cosTotal - muzzleDistY * sinTotal),
+            mountY + (localOffsetX * sinTotal + muzzleDistY * cosTotal)
+        );
+    }
+
+    /**
+     * Overrides getWorldTransformMatrix to ensure Phaser containers and transforms
+     * always have the current physics rotation synchronized.
+     */
+    public override getWorldTransformMatrix(
+        tempMatrix?: Phaser.GameObjects.Components.TransformMatrix,
+        parentMatrix?: Phaser.GameObjects.Components.TransformMatrix
+    ): Phaser.GameObjects.Components.TransformMatrix {
+        (this as any)._rotation = this.rotation;
+        return super.getWorldTransformMatrix(tempMatrix, parentMatrix);
     }
 
 
@@ -287,6 +332,7 @@ export default class Tank extends Phaser.GameObjects.Container {
     }
 
     public update(_time: number, delta: number) {
+        (this as any)._rotation = this.rotation;
         this.gun.update(_time, delta);
         this.updateResourceBar();
 

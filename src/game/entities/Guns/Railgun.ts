@@ -20,7 +20,6 @@ export default class Railgun extends BaseGun {
 
     private beamRange: number = 825; // teslaRange = tanksSize * 5.5 = 825 px (index.js:129)
     private damage: number = 50; // index.js:1248, 1353
-    private ownerTank: Tank;
 
     // Visual beam graphics
     private beamGraphics: Phaser.GameObjects.Graphics;
@@ -29,8 +28,6 @@ export default class Railgun extends BaseGun {
     constructor(scene: Phaser.Scene, props: IRailgunProps) {
         const textureKey = `gun_${props.gunType}`;
         super(scene, props, textureKey);
-
-        this.ownerTank = props.ownerTank;
 
         const char = CHARACTERISTICS_GUNS['02'];
         this.damage = props.damage ?? char.playerDamage;

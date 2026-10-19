@@ -53,7 +53,7 @@ export default class GameScene extends Phaser.Scene {
         });
 
         this.entities.push(new Tank(this, {
-            x: 700,
+            x: 1100,
             y: 700,
             hullTexture: 'hull_01',
             gunTexture: 'gun_02',
@@ -61,8 +61,10 @@ export default class GameScene extends Phaser.Scene {
             hullType: '01',
             gunType: '01',
             trackTextures: ['track_2A', 'track_2B'],
-            bulletTexture: 'bullet'
+            bulletTexture: 'bullet',
+            team: 'enemy'
         }));
+
 
         this.playerController = new PlayerController(
             this.player,

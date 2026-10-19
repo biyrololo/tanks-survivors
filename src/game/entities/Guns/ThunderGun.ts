@@ -20,13 +20,10 @@ export default class ThunderGun extends BaseGun {
     private damage: number = 50; // index.js:1250, start_menu.js:85
     private splashRadius: number = 112.5; // (bulletParams.size * thunderSize) / 2 = (75 * 3) / 2 = 112.5 px (index.js:151, 3849)
     private bulletTexture: string = 'bullet';
-    private ownerTank: Tank;
 
     constructor(scene: Phaser.Scene, props: IThunderGunProps) {
         const textureKey = `gun_${props.gunType}`;
         super(scene, props, textureKey);
-
-        this.ownerTank = props.ownerTank;
 
         const char = CHARACTERISTICS_GUNS['07'];
         this.damage = props.damage ?? char.playerDamage;

@@ -20,7 +20,6 @@ export default class TwinGun extends BaseGun {
     private bulletSpeed: number = 1500;
     private damage: number = 30; // 30 per barrel in player start_menu.js / characteristics.js
     private bulletTexture: string = 'bullet';
-    private ownerTank: Tank;
 
     // Original game constant: angleShiftMultishots = 10 deg (index.js:98)
     private spreadAngleRad = Phaser.Math.DegToRad(5); // -5 deg and +5 deg
@@ -28,8 +27,6 @@ export default class TwinGun extends BaseGun {
     constructor(scene: Phaser.Scene, props: ITwinGunProps) {
         const textureKey = `gun_${props.gunType}`;
         super(scene, props, textureKey);
-
-        this.ownerTank = props.ownerTank;
 
         const char = CHARACTERISTICS_GUNS['06'];
         this.damage = props.damage ?? char.playerDamage;
@@ -60,6 +57,13 @@ export default class TwinGun extends BaseGun {
     public override getMuzzleWorldPoints(): Phaser.Math.Vector2[] {
         const localMuzzleY = 29 - 144; // border.y - center.y from tankParams['06']
         const barrelSeparation = 10; // 10px left and right in local space
+
+        if (this.ownerTank) {
+            return [
+                this.ownerTank.getMuzzleWorldPoint(-barrelSeparation, localMuzzleY),
+                this.ownerTank.getMuzzleWorldPoint(barrelSeparation, localMuzzleY)
+            ];
+        }
 
         const matrix = this.getWorldTransformMatrix();
         const p1 = new Phaser.Math.Vector2(

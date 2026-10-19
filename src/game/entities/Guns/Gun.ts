@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import type Tank from "../Tank";
 
 export type GunResourceType = 'cooldown' | 'energy' | 'heat';
 
@@ -33,5 +34,6 @@ export interface IGun extends Phaser.GameObjects.Container {
 export interface IGunProps {
     gunType: string;
     gunPosition: { x: number; y: number };
+    ownerTank: Tank;
     hullColor?: string;
 }

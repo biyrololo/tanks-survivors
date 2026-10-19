@@ -1,9 +1,11 @@
 import Phaser from 'phaser';
 import { tanksParams } from '@/game/config/tankParams';
 import type { IGun, IGunProps, GunResourceType } from './Gun';
+import type Tank from '../Tank';
 
 export default abstract class BaseGun extends Phaser.GameObjects.Container implements IGun {
     public readonly gunType: string;
+    protected ownerTank: Tank;
     protected gunSprite: Phaser.GameObjects.Sprite;
     protected gunAngle: number = 0; // In radians, relative to parent tank
     public gunRotationSpeed: number = 3; // Radians/sec (original: 3 deg/frame @ 60fps = ~3.14 rad/s)
@@ -26,6 +28,7 @@ export default abstract class BaseGun extends Phaser.GameObjects.Container imple
     constructor(scene: Phaser.Scene, props: IGunProps, textureKey: string) {
         super(scene, props.gunPosition.x, props.gunPosition.y);
         this.gunType = props.gunType;
+        this.ownerTank = props.ownerTank;
         this.basePosition = { ...props.gunPosition };
 
         this.gunSprite = new Phaser.GameObjects.Sprite(scene, 0, 0, textureKey);
@@ -115,10 +118,15 @@ export default abstract class BaseGun extends Phaser.GameObjects.Container imple
      */
     public getMuzzleWorldPoints(): Phaser.Math.Vector2[] {
         const params = tanksParams[this.gunType]?.gun ?? tanksParams['01'].gun;
-        // Local muzzle Y offset relative to gun origin (before rotation)
-        const localMuzzleY = params.border.y - params.center.y;
+        // Local muzzle Y offset relative to gun origin (before rotation), including recoil shift
+        const recoilShift = this.gunSprite ? this.gunSprite.y : 0;
+        const localMuzzleY = params.border.y - params.center.y + recoilShift;
 
-        // Transform local (0, localMuzzleY) to world coordinates via container transformation
+        if (this.ownerTank) {
+            return [this.ownerTank.getMuzzleWorldPoint(0, localMuzzleY)];
+        }
+
+        // Fallback for detached gun containers
         const matrix = this.getWorldTransformMatrix();
         const worldX = matrix.getX(0, localMuzzleY);
         const worldY = matrix.getY(0, localMuzzleY);

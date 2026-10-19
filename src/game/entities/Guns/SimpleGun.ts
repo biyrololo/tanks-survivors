@@ -19,13 +19,10 @@ export default class SimpleGun extends BaseGun {
     private bulletSpeed: number = 1500; // px/sec (original: 25 px/frame @ 60fps = 1500 px/s)
     private damage: number = 30; // original: 30
     private bulletTexture: string = 'bullet';
-    private ownerTank: Tank;
 
     constructor(scene: Phaser.Scene, props: ISimpleGunProps) {
         const textureKey = `gun_${props.gunType}`;
         super(scene, props, textureKey);
-
-        this.ownerTank = props.ownerTank;
 
         const char = CHARACTERISTICS_GUNS[props.gunType] ?? CHARACTERISTICS_GUNS['01'];
         this.damage = props.damage ?? char.playerDamage;

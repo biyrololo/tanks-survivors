@@ -20,7 +20,6 @@ export default class Flamethrower extends BaseGun {
 
     private flameRange: number = 300; // ~303 px (index.js:3702)
     private damagePerSec: number = 120; // 2 damage/frame @ 60fps (start_menu.js:78)
-    private ownerTank: Tank;
 
     // Visual flame effect
     private flameGraphics: Phaser.GameObjects.Graphics;
@@ -28,8 +27,6 @@ export default class Flamethrower extends BaseGun {
     constructor(scene: Phaser.Scene, props: IFlamethrowerProps) {
         const textureKey = `gun_${props.gunType}`;
         super(scene, props, textureKey);
-
-        this.ownerTank = props.ownerTank;
 
         const char = CHARACTERISTICS_GUNS['04'];
         this.damagePerSec = (props.damage ?? char.playerDamage) * 60;

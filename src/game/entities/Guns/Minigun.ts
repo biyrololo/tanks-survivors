@@ -22,7 +22,6 @@ export default class Minigun extends BaseGun {
 
     private range: number = 750; // MGunRange = 750 px (index.js:130)
     private damagePerSec: number = 60; // 1 damage/frame @ 60fps = 60 DPS (characteristics.js:76)
-    private ownerTank: Tank;
 
     // Visual tracer graphics
     private tracerGraphics: Phaser.GameObjects.Graphics;
@@ -30,8 +29,6 @@ export default class Minigun extends BaseGun {
     constructor(scene: Phaser.Scene, props: IMinigunProps) {
         const textureKey = `gun_${props.gunType}`;
         super(scene, props, textureKey);
-
-        this.ownerTank = props.ownerTank;
 
         const char = CHARACTERISTICS_GUNS['08'];
         this.damagePerSec = (props.damage ?? char.playerDamage) * 60;
