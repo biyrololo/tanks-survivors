@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import BaseGun from "./BaseGun";
 import type { IGunProps, GunResourceType } from "./Gun";
 import { CHARACTERISTICS_GUNS } from "@/game/config/characteristics";

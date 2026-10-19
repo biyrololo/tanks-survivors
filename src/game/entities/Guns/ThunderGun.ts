@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import Projectile from "../Projectile";
 import BaseGun from "./BaseGun";
 import type { IGunProps, GunResourceType } from "./Gun";
