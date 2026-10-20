@@ -24,11 +24,11 @@ export class GunFactory {
             case '02':
                 return new Railgun(scene, params);
             case '03':
-                return new RicochetGun(scene, params);
+                return new RicochetGun(scene, { ...params, bulletTexture: 'ricoBullet' });
             case '04':
                 return new Flamethrower(scene, params);
             case '05':
-                return new FreezeGun(scene, params);
+                return new FreezeGun(scene, { ...params, bulletTexture: 'freezeBullet' });
             case '06':
                 return new TwinGun(scene, params);
             case '07':

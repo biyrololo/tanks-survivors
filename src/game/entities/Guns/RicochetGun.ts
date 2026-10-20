@@ -32,6 +32,15 @@ export default class RicochetGun extends BaseGun {
         if (props.damage) this.damage = props.damage;
         if (props.bulletSpeed) this.bulletSpeed = props.bulletSpeed;
         if (props.bulletTexture) this.bulletTexture = props.bulletTexture;
+        this.recoil.maxShift = 12;
+
+        // Ricochet suppresses generic cannon Flash_A (index.js:3607-3626)
+        this.flashSprite.setVisible(false);
+        this.flashSprite.setActive(false);
+    }
+
+    public override triggerFlash(): void {
+        // Ricochet does not use Flash_A
     }
 
     public canFire(): boolean {
@@ -56,7 +65,7 @@ export default class RicochetGun extends BaseGun {
 
         this.currentEnergy -= this.energyCostPerShot;
         this.shotCooldownTimer = this.shotCooldownMs;
-        this.triggerRecoil();
+        this.triggerRecoil(12, false);
 
         const muzzles = this.getMuzzleWorldPoints();
         const worldAngle = this.ownerTank.rotation + this.gunAngle;

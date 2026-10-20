@@ -24,9 +24,20 @@ export default class TwinGun extends BaseGun {
     // Original game constant: angleShiftMultishots = 10 deg (index.js:98)
     private spreadAngleRad = Phaser.Math.DegToRad(5); // -5 deg and +5 deg
 
+    private flashSpriteRight: Phaser.GameObjects.Sprite;
+
     constructor(scene: Phaser.Scene, props: ITwinGunProps) {
         const textureKey = `gun_${props.gunType}`;
         super(scene, props, textureKey);
+
+        const localMuzzleY = 29 - 144;
+        this.flashSprite.setX(-10);
+        this.flashSprite.setY(localMuzzleY);
+
+        this.flashSpriteRight = new Phaser.GameObjects.Sprite(scene, 10, localMuzzleY, 'flash_A_0');
+        this.flashSpriteRight.setOrigin(0.5, 0.84);
+        this.flashSpriteRight.setVisible(false);
+        this.add(this.flashSpriteRight);
 
         const char = CHARACTERISTICS_GUNS['06'];
         this.damage = props.damage ?? char.playerDamage;
@@ -37,6 +48,7 @@ export default class TwinGun extends BaseGun {
 
         if (props.bulletSpeed) this.bulletSpeed = props.bulletSpeed;
         if (props.bulletTexture) this.bulletTexture = props.bulletTexture;
+        this.recoil.maxShift = 15;
     }
 
     public canFire(): boolean {
@@ -116,6 +128,14 @@ export default class TwinGun extends BaseGun {
         return true;
     }
 
+    public override triggerFlash(): void {
+        super.triggerFlash();
+        if (this.flashSpriteRight) {
+            this.flashSpriteRight.setTexture('flash_A_0');
+            this.flashSpriteRight.setVisible(true);
+        }
+    }
+
     public override update(_time: number, delta: number): void {
         super.update(_time, delta);
 
@@ -128,6 +148,19 @@ export default class TwinGun extends BaseGun {
 
         if (this.isTriggerDown && this.reloadTimer <= 0) {
             this.tryFire();
+        }
+
+        // Advance right barrel muzzle flash
+        if (this.flashSpriteRight) {
+            this.flashSpriteRight.setY(this.baseMuzzleY + this.gunSprite.y);
+            if (this.isFlash) {
+                const progress = 1 - (this.flashTimer / this.flashDurationMs);
+                const frame = Math.min(4, Math.floor(progress * 5));
+                this.flashSpriteRight.setTexture(`flash_A_${frame}`);
+                this.flashSpriteRight.setVisible(true);
+            } else {
+                this.flashSpriteRight.setVisible(false);
+            }
         }
     }
 }

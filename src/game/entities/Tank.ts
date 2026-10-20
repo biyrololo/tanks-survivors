@@ -40,6 +40,13 @@ export default class Tank extends Phaser.GameObjects.Container {
     private trackAnimInterval = 100; // ~6 frames @ 60fps (original: freq = 4..6 frames)
     private trackAnimSpeedThreshold = 0.05;
 
+    // Exhaust fire effects (index.js:1008-1018)
+    private exhaustLeft: Phaser.GameObjects.Sprite;
+    private exhaustRight: Phaser.GameObjects.Sprite;
+    private exhaustFrame = 0;
+    private exhaustTimer = 0;
+    private exhaustInterval = 100; // 6 frames @ 60fps
+
     public team: string;
     public bulletTexture: string;
     public bulletSpeed: number;
@@ -155,7 +162,19 @@ export default class Tank extends Phaser.GameObjects.Container {
         this.trackLeft = new Phaser.GameObjects.Sprite(scene, -trackCenterOffsetX, trackCenterOffsetY, this.trackTextures[1]);
         this.trackLeft.setDisplaySize(track.w, track.h);
 
-        this.add([this.trackLeft, this.trackRight, this.hull, this.gun]);
+        // Exhaust flames from hullParams.fire (index.js:1008-1018)
+        const exhaustY = hullParams.fire - bodyCenterY;
+        const exhaustSeparationX = 19.2; // -center.x*0.85 and -center.x*1.15 in index.js:1017-1018
+
+        this.exhaustLeft = new Phaser.GameObjects.Sprite(scene, -exhaustSeparationX, exhaustY, 'exhaust_0');
+        this.exhaustLeft.setOrigin(0.5, 0.535);
+        this.exhaustLeft.setVisible(false);
+
+        this.exhaustRight = new Phaser.GameObjects.Sprite(scene, exhaustSeparationX, exhaustY, 'exhaust_0');
+        this.exhaustRight.setOrigin(0.5, 0.535);
+        this.exhaustRight.setVisible(false);
+
+        this.add([this.exhaustLeft, this.exhaustRight, this.trackLeft, this.trackRight, this.hull, this.gun]);
 
         this.hpBarColor = this.team === 'player' ? 0x00cc44 : 0xee2222;
         this.hpBarBgColor = 0x222222;
@@ -200,7 +219,8 @@ export default class Tank extends Phaser.GameObjects.Container {
 
     public rotateGun(direction: number, delta: number) {
         const freeze = this.getFreezeFactor();
-        this.gun.rotateGun(direction * freeze, delta);
+        const turnMultiplier = this.gun.getTurnSpeedMultiplier ? this.gun.getTurnSpeedMultiplier() : 1.0;
+        this.gun.rotateGun(direction * freeze * turnMultiplier, delta);
     }
 
     public setGunRotation(angle: number) {
@@ -232,12 +252,19 @@ export default class Tank extends Phaser.GameObjects.Container {
             },
             ownerTank: this,
             bulletSpeed: this.bulletSpeed,
-            damage: this.damage,
-            bulletTexture: this.bulletTexture
+            damage: this.damage
         });
 
         this.gun.setGunRotation(currentAngle);
         this.add(this.gun as unknown as Phaser.GameObjects.GameObject);
+
+        // Keep HP & resource HUD bars above gun
+        if (this.hpBarBg) this.bringToTop(this.hpBarBg);
+        if (this.hpBar) this.bringToTop(this.hpBar);
+        if (this.resourceBarBg) this.bringToTop(this.resourceBarBg);
+        if (this.resourceBar) this.bringToTop(this.resourceBar);
+
+        this.updateTemperatureVisuals();
     }
 
     /**
@@ -340,10 +367,10 @@ export default class Tank extends Phaser.GameObjects.Container {
 
         // Temperature dynamics (index.js:915-921)
         if (this.temp > 0) {
-            // Burn DoT: 0.2 damage per frame @ 60 FPS (12 DPS)
-            this.takeDamage(0.2 * dtFrames);
-            // Cool down by 1.0 unit per frame
-            this.temp = Math.max(0, this.temp - 1.0 * dtFrames);
+            // Burn DoT: 0.1 damage per frame
+            this.takeDamage(0.1 * dtFrames);
+            // Passive cooldown: 0.7 units per frame
+            this.temp = Math.max(0, this.temp - 0.7 * dtFrames);
         } else if (this.temp < 0) {
             // Passive thawing: +0.5 units per frame (30 units/sec)
             this.temp = Math.min(0, this.temp + 0.5 * dtFrames);
@@ -352,10 +379,13 @@ export default class Tank extends Phaser.GameObjects.Container {
         // Visual temperature tinting
         this.updateTemperatureVisuals();
 
-        // Animated tracks
+        // Animated tracks & exhaust fire effects (index.js:1001-1018)
         if (this.body) {
             const speed = this.body.speed + Math.abs(this.body.angularVelocity) * 20;
-            if (speed > this.trackAnimSpeedThreshold) {
+            const isMoving = speed > this.trackAnimSpeedThreshold;
+
+            if (isMoving) {
+                // Tracks animation
                 this.trackAnimTimer += delta;
                 if (this.trackAnimTimer >= this.trackAnimInterval) {
                     this.trackAnimTimer = 0;
@@ -363,35 +393,63 @@ export default class Tank extends Phaser.GameObjects.Container {
                     this.trackRight.setTexture(this.trackTextures[this.trackFrame]);
                     this.trackLeft.setTexture(this.trackTextures[1 - this.trackFrame]);
                 }
+
+                // Exhaust flames animation
+                this.exhaustTimer += delta;
+                if (this.exhaustTimer >= this.exhaustInterval) {
+                    this.exhaustTimer = 0;
+                    this.exhaustFrame = (this.exhaustFrame + 1) % 5;
+                    const tex = `exhaust_${this.exhaustFrame}`;
+                    this.exhaustLeft.setTexture(tex);
+                    this.exhaustRight.setTexture(tex);
+                }
+
+                if (!this.exhaustLeft.visible) {
+                    this.exhaustLeft.setVisible(true);
+                    this.exhaustRight.setVisible(true);
+                }
+            } else {
+                if (this.exhaustLeft.visible) {
+                    this.exhaustLeft.setVisible(false);
+                    this.exhaustRight.setVisible(false);
+                }
             }
         }
     }
 
     private updateTemperatureVisuals(): void {
+        const absTemp = Math.abs(this.temp);
+        if (absTemp < 1) {
+            this.hull.clearTint();
+            this.trackLeft.clearTint();
+            this.trackRight.clearTint();
+            this.gun.clearTint();
+            return;
+        }
+
+        // Linear normalization: reaches full color saturation at 400 temp
+        const norm = Math.min(1, absTemp / 400);
+
         if (this.temp < 0) {
-            // Frozen / Cold tint (Cyan / Ice blue)
-            const intensity = Math.abs(this.temp) / 800;
-            const r = Math.round(255 * (1 - intensity * 0.6));
-            const g = Math.round(255 * (1 - intensity * 0.2));
+            // Cold / Freeze tint: linear progression to intense ice blue / cyan
+            const r = Math.round(255 * (1 - norm));
+            const g = Math.round(255 * (1 - 0.3 * norm));
             const b = 255;
             const tint = (r << 16) | (g << 8) | b;
             this.hull.setTint(tint);
             this.trackLeft.setTint(tint);
             this.trackRight.setTint(tint);
-        } else if (this.temp > 0) {
-            // Burning / Heat tint (Fiery Orange / Red)
-            const intensity = this.temp / 800;
+            this.gun.setTint(tint);
+        } else {
+            // Heat / Fire tint: linear progression to pure, vivid RED (as requested by user)
             const r = 255;
-            const g = Math.round(255 * (1 - intensity * 0.5));
-            const b = Math.round(255 * (1 - intensity * 0.7));
+            const g = Math.round(255 * (1 - norm));
+            const b = Math.round(255 * (1 - norm));
             const tint = (r << 16) | (g << 8) | b;
             this.hull.setTint(tint);
             this.trackLeft.setTint(tint);
             this.trackRight.setTint(tint);
-        } else {
-            this.hull.clearTint();
-            this.trackLeft.clearTint();
-            this.trackRight.clearTint();
+            this.gun.setTint(tint);
         }
     }
 
@@ -403,10 +461,12 @@ export default class Tank extends Phaser.GameObjects.Container {
         this.hpBarBg = this.scene.add.graphics();
         this.hpBarBg.fillStyle(this.hpBarBgColor, 1);
         this.hpBarBg.fillRect(-barWidth / 2, offsetY, barWidth, barHeight);
+        this.hpBarBg.setDepth(100);
 
         this.hpBar = this.scene.add.graphics();
         this.hpBar.fillStyle(this.hpBarColor, 1);
         this.hpBar.fillRect(-barWidth / 2, offsetY, barWidth, barHeight);
+        this.hpBar.setDepth(101);
 
         this.add([this.hpBarBg, this.hpBar]);
     }
@@ -419,8 +479,10 @@ export default class Tank extends Phaser.GameObjects.Container {
         this.resourceBarBg = this.scene.add.graphics();
         this.resourceBarBg.fillStyle(0x222222, 1);
         this.resourceBarBg.fillRect(-barWidth / 2, offsetY, barWidth, barHeight);
+        this.resourceBarBg.setDepth(100);
 
         this.resourceBar = this.scene.add.graphics();
+        this.resourceBar.setDepth(101);
         this.add([this.resourceBarBg, this.resourceBar]);
     }
 
@@ -432,17 +494,27 @@ export default class Tank extends Phaser.GameObjects.Container {
         this.resourceBar.clear();
 
         const type = this.gun.getResourceType();
-        let color = 0x00ff00; // Cooldown ready / loading
-        if (type === 'energy') {
-            color = 0x00ddff; // Cyan energy
-        } else if (type === 'heat') {
-            color = 0xff6600; // Orange heat
-        }
+        const progress = this.gun.getResourceProgress();
 
-        const progress = this.gun.getResourceProgress(); // 0 to 1
-        const filledWidth = type === 'cooldown'
-            ? barWidth * (1 - progress) // Cooldown fills up as timer goes to 0
-            : barWidth * (1 - progress); // Energy or heat remaining
+        let color = 0x00ff00;
+        let filledWidth = 0;
+
+        if (type === 'cooldown') {
+            color = 0x00ff00; // Ready / loading green
+            filledWidth = barWidth * progress;
+        } else if (type === 'energy') {
+            color = 0x00ddff; // Cyan energy
+            filledWidth = barWidth * progress;
+        } else if (type === 'heat') {
+            if (progress >= 1.0) {
+                // Overload / Перегруз: flashing warning red / bright fiery orange
+                color = (Math.floor(Date.now() / 120) % 2 === 0) ? 0xff0000 : 0xff5500;
+                filledWidth = barWidth;
+            } else {
+                color = 0xff6600; // Orange heat
+                filledWidth = barWidth * (1 - progress); // Remaining safe fire capacity
+            }
+        }
 
         this.resourceBar.fillStyle(color, 1);
         this.resourceBar.fillRect(-barWidth / 2, offsetY, Math.max(0, filledWidth), barHeight);

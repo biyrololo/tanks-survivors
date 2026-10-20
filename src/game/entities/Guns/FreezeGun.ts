@@ -24,14 +24,23 @@ export default class FreezeGun extends BaseGun {
 
     private bulletSpeed: number = 420; // 7 px/frame @ 60fps = 420 px/s (index.js:167)
     private damage: number = 17; // index.js:1254, 1331
-    private bulletTexture: string = 'bullet';
+    private bulletTexture: string = 'freezeBullet';
 
     constructor(scene: Phaser.Scene, props: IFreezeGunProps) {
         const textureKey = `gun_${props.gunType}`;
         super(scene, props, textureKey);
         if (props.damage) this.damage = props.damage;
         if (props.bulletSpeed) this.bulletSpeed = props.bulletSpeed;
-        if (props.bulletTexture) this.bulletTexture = props.bulletTexture;
+        this.bulletTexture = 'freezeBullet';
+        this.recoil.maxShift = 12;
+
+        // FreezeGun suppresses generic cannon Flash_A (index.js:3580-3605)
+        this.flashSprite.setVisible(false);
+        this.flashSprite.setActive(false);
+    }
+
+    public override triggerFlash(): void {
+        // FreezeGun does not use Flash_A
     }
 
     public canFire(): boolean {
@@ -55,7 +64,7 @@ export default class FreezeGun extends BaseGun {
 
         this.currentEnergy -= this.energyCostPerShot;
         this.shotCooldownTimer = this.shotCooldownMs;
-        this.triggerRecoil();
+        this.triggerRecoil(12, false);
 
         const muzzles = this.getMuzzleWorldPoints();
         const worldAngle = this.ownerTank.rotation + this.gunAngle;

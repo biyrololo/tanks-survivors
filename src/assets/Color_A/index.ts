@@ -16,5 +16,10 @@ import hull06 from './Hull_06.png';
 import hull07 from './Hull_07.png';
 import hull08 from './Hull_08.png';
 
+import mg1 from './MG1.png';
+import mg2 from './MG2.png';
+import mg3 from './MG3.png';
+
 export const guns = [gun01, gun02, gun03, gun04, gun05, gun06, gun07, gun08];
 export const hulls = [hull01, hull02, hull03, hull04, hull05, hull06, hull07, hull08];
+export const mgFrames = [mg1, mg2, mg3];

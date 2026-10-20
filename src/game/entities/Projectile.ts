@@ -36,6 +36,7 @@ export default class Projectile extends Phaser.GameObjects.Sprite {
 
     private baseSpeed: number;
     private lifeTimer: Phaser.Time.TimerEvent;
+    public flightAngle: number;
 
     constructor(scene: Phaser.Scene, props: IProjectileProps) {
         super(scene, props.x, props.y, props.texture);
@@ -51,8 +52,7 @@ export default class Projectile extends Phaser.GameObjects.Sprite {
         this.splashRadius = props.splashRadius;
         this.statusEffect = props.statusEffect;
         this.baseSpeed = props.speed;
-
-        this.setRotation(props.angle);
+        this.flightAngle = props.angle;
 
         const isSensor = this.bouncesRemaining <= 0;
 
@@ -68,6 +68,11 @@ export default class Projectile extends Phaser.GameObjects.Sprite {
 
         (this.body as any).gameObject = this;
 
+        // Explicitly set the Matter body angle and lock rotation to the turret aim angle
+        scene.matter.body.setAngle(this.body, this.flightAngle);
+        scene.matter.body.setInertia(this.body, Infinity);
+        this.setRotation(this.flightAngle);
+
         // Direction: 0 rad = "up" (subtract PI/2 for screen cartesian)
         const dirAngle = props.angle - Math.PI / 2;
         const vx = Math.cos(dirAngle) * (props.speed / 60);
@@ -78,6 +83,16 @@ export default class Projectile extends Phaser.GameObjects.Sprite {
         this.lifeTimer = scene.time.delayedCall(props.lifespan ?? 2000, () => {
             this.destroy();
         });
+    }
+
+    protected override preUpdate(time: number, delta: number): void {
+        super.preUpdate(time, delta);
+        // Lock rotation during flight to match turret aim angle
+        if (this.body) {
+            this.scene.matter.body.setAngle(this.body, this.flightAngle);
+            this.scene.matter.body.setAngularVelocity(this.body, 0);
+        }
+        this.setRotation(this.flightAngle);
     }
 
     /**
@@ -96,6 +111,9 @@ export default class Projectile extends Phaser.GameObjects.Sprite {
                     x: (vel.x / currentLen) * targetLen,
                     y: (vel.y / currentLen) * targetLen
                 });
+                this.flightAngle = Math.atan2(vel.y, vel.x) + Math.PI / 2;
+                this.scene.matter.body.setAngle(this.body, this.flightAngle);
+                this.setRotation(this.flightAngle);
             }
 
             if (this.bouncesRemaining <= 0) {

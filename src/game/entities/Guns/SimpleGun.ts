@@ -34,6 +34,7 @@ export default class SimpleGun extends BaseGun {
 
         if (props.bulletSpeed) this.bulletSpeed = props.bulletSpeed;
         if (props.bulletTexture) this.bulletTexture = props.bulletTexture;
+        this.recoil.maxShift = 15;
     }
 
     public canFire(): boolean {

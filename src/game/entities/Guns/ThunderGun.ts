@@ -35,6 +35,7 @@ export default class ThunderGun extends BaseGun {
 
         if (props.bulletSpeed) this.bulletSpeed = props.bulletSpeed;
         if (props.bulletTexture) this.bulletTexture = props.bulletTexture;
+        this.recoil.maxShift = 22; // Heavy artillery cannon kickback
     }
 
     public canFire(): boolean {

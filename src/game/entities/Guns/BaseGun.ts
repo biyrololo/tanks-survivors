@@ -13,14 +13,22 @@ export default abstract class BaseGun extends Phaser.GameObjects.Container imple
     // Trigger state
     protected isTriggerDown: boolean = false;
 
-    // Recoil state matching original game (15 frames total: 5 frames kickback, 10 frames return)
-    // index.js:412, 799-812: shiftGun = { backM: 10, back: 10, straight: 10, state: false }
+    // Recoil state matching original game
     protected recoil = {
         state: false,
-        back: 10,
-        straight: 10,
-        maxShift: 10
+        back: 0,
+        straight: 0,
+        maxShift: 15
     };
+
+    // Base muzzle Y for syncing flash with recoil
+    protected baseMuzzleY: number = 0;
+
+    // Muzzle flash state (index.js:1023-1031)
+    protected flashSprite: Phaser.GameObjects.Sprite;
+    protected isFlash: boolean = false;
+    protected flashTimer: number = 0;
+    protected flashDurationMs: number = 83; // 5 frames @ 60fps (~83ms)
 
     // Base position within tank container
     protected basePosition: { x: number; y: number };
@@ -41,7 +49,13 @@ export default abstract class BaseGun extends Phaser.GameObjects.Container imple
             params.center.y / this.gunSprite.height
         );
 
-        this.add(this.gunSprite);
+        // Muzzle flash sprite attached at muzzle tip (anchor at 0.84 matches Flash_A explosion base)
+        this.baseMuzzleY = params.border.y - params.center.y;
+        this.flashSprite = new Phaser.GameObjects.Sprite(scene, 0, this.baseMuzzleY, 'flash_A_0');
+        this.flashSprite.setOrigin(0.5, 0.84);
+        this.flashSprite.setVisible(false);
+
+        this.add([this.gunSprite, this.flashSprite]);
         scene.add.existing(this);
     }
 
@@ -58,6 +72,11 @@ export default abstract class BaseGun extends Phaser.GameObjects.Container imple
     public setGunRotation(angle: number): void {
         this.gunAngle = angle;
         this.setRotation(this.gunAngle);
+    }
+
+    /** Multiplier on turret traversal speed (overridden in Minigun for overload dynamics) */
+    public getTurnSpeedMultiplier(): number {
+        return 1.0;
     }
 
     public setTrigger(isDown: boolean): void {
@@ -77,39 +96,54 @@ export default abstract class BaseGun extends Phaser.GameObjects.Container imple
     /** Trigger release hook - override in subclass */
     protected onTriggerUp(): void {}
 
-    /** Trigger recoil kickback animation (15 frames matching original game) */
-    protected triggerRecoil(): void {
+    /** Trigger recoil kickback animation matching index.js:799-812 */
+    public triggerRecoil(customShift?: number, triggerFlash: boolean = true): void {
         this.recoil.state = true;
-        this.recoil.back = this.recoil.maxShift;
-        this.recoil.straight = this.recoil.maxShift;
+        const shift = customShift ?? this.recoil.maxShift;
+        this.recoil.maxShift = shift;
+        this.recoil.back = shift;
+        this.recoil.straight = shift;
+        if (triggerFlash) {
+            this.triggerFlash();
+        }
     }
 
-    /** Update recoil kickback and return */
+    /** Trigger muzzle flash animation (5 frames @ 60fps, index.js:1023-1031) */
+    public triggerFlash(): void {
+        this.isFlash = true;
+        this.flashTimer = this.flashDurationMs;
+        this.flashSprite.setTexture('flash_A_0');
+        this.flashSprite.setVisible(true);
+    }
+
+    /** Update 2-phase recoil kickback and return (index.js:799-812) */
     protected updateRecoil(delta: number): void {
         if (!this.recoil.state) {
             this.gunSprite.setY(0);
+            if (this.flashSprite) this.flashSprite.setY(this.baseMuzzleY);
             return;
         }
 
-        // Frame-rate independent delta in 60-FPS units
         const dtFrames = delta / (1000 / 60);
 
+        // Phase 1 (Kickback): back counts down from maxShift to 0 at 2px/frame
+        // Phase 2 (Recovery): straight counts down from maxShift to 0 at 1px/frame
         if (this.recoil.back > 0) {
-            // Kickback phase: moves back 2 units per frame (5 frames total)
             this.recoil.back = Math.max(0, this.recoil.back - 2 * dtFrames);
         } else if (this.recoil.straight > 0) {
-            // Return phase: returns forward 1 unit per frame (10 frames total)
             this.recoil.straight = Math.max(0, this.recoil.straight - 1 * dtFrames);
         } else {
-            // Finished
             this.recoil.state = false;
             this.recoil.back = this.recoil.maxShift;
             this.recoil.straight = this.recoil.maxShift;
         }
 
-        // Current shift in pixels along barrel axis (local +Y is backward)
-        const shiftY = this.recoil.maxShift - this.recoil.back - (this.recoil.maxShift - this.recoil.straight);
+        // Current kickback displacement: 0 -> maxShift -> 0 (-back + straight)
+        const shiftY = this.recoil.state ? (-this.recoil.back + this.recoil.straight) : 0;
         this.gunSprite.setY(shiftY);
+        if (this.flashSprite) {
+            this.flashSprite.setY(this.baseMuzzleY + shiftY);
+        }
     }
 
     /**
@@ -140,5 +174,26 @@ export default abstract class BaseGun extends Phaser.GameObjects.Container imple
 
     public update(_time: number, delta: number): void {
         this.updateRecoil(delta);
+
+        // Advance muzzle flash animation (5 frames total)
+        if (this.isFlash) {
+            this.flashTimer -= delta;
+            if (this.flashTimer <= 0) {
+                this.isFlash = false;
+                this.flashSprite.setVisible(false);
+            } else {
+                const progress = 1 - (this.flashTimer / this.flashDurationMs);
+                const frame = Math.min(4, Math.floor(progress * 5));
+                this.flashSprite.setTexture(`flash_A_${frame}`);
+            }
+        }
+    }
+
+    public setTint(tint: number): void {
+        this.gunSprite.setTint(tint);
+    }
+
+    public clearTint(): void {
+        this.gunSprite.clearTint();
     }
 }

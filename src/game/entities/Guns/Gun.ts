@@ -12,6 +12,8 @@ export interface IGun extends Phaser.GameObjects.Container {
     rotateGun(direction: number, delta: number): void;
     /** Set gun rotation angle directly (for mouse aim / target tracking) */
     setGunRotation(angle: number): void;
+    /** Multiplier on gun rotation speed (for overload / temperature slow-downs) */
+    getTurnSpeedMultiplier?(): number;
 
     /** Trigger lifecycle: called when fire button/mouse is pressed (true) or released (false) */
     setTrigger(isDown: boolean): void;
@@ -29,6 +31,11 @@ export interface IGun extends Phaser.GameObjects.Container {
 
     /** Updates cooldowns, charging, recoil, flash, and continuous firing states */
     update(time: number, delta: number): void;
+
+    /** Tints the gun sprite for visual temperature effects (freeze / burn) */
+    setTint(tint: number): void;
+    /** Clears the gun sprite tint */
+    clearTint(): void;
 }
 
 export interface IGunProps {
