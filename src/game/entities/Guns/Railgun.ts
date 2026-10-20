@@ -99,44 +99,55 @@ export default class Railgun extends BaseGun {
         this.cooldownTimer = this.cooldownDurationMs;
         this.triggerRecoil(20, false);
 
-        const muzzles = this.getMuzzleWorldPoints();
-        const startPoint = muzzles[0] ?? new Phaser.Math.Vector2(this.ownerTank.x, this.ownerTank.y);
-        const worldAngle = this.ownerTank.rotation + this.gunAngle;
+        const worldAngle = this.ownerTank.getGunWorldRotation();
 
-        // Direction vector
+        // Direction vector (0 rad is pointing UP in screen coordinates)
         const dirAngle = worldAngle - Math.PI / 2;
         const dirX = Math.cos(dirAngle);
         const dirY = Math.sin(dirAngle);
 
-        const endPoint = new Phaser.Math.Vector2(
-            startPoint.x + dirX * this.beamRange,
-            startPoint.y + dirY * this.beamRange
-        );
+        const muzzles = this.getMuzzleWorldPoints();
+        const muzzlePoint = muzzles[0] ?? new Phaser.Math.Vector2(this.ownerTank.x, this.ownerTank.y);
+
+        // Ray starts from the shooter tank center to reliably register point-blank hits
+        const shooterX = this.ownerTank.x;
+        const shooterY = this.ownerTank.y;
 
         // Pierce hit query against all active tanks in scene
         const scene = this.scene as any;
-        const allEntities: Tank[] = scene.entities ?? [];
+        const allEntities: Tank[] = scene.getEntities ? scene.getEntities() : (scene.entities ?? []);
+
+        // Generous beam hit radius: half-width of tank hull (~65px) + beam half-width (24px) = ~89px
+        const HIT_RADIUS = 85;
 
         for (const target of allEntities) {
-            if (!target.active || target === this.ownerTank) continue;
-            if (target.team && target.team === this.ownerTank.team) continue;
+            if (!target.active || !target.body || target === this.ownerTank) continue;
 
-            // Check distance from target center to beam segment
-            const dist = Phaser.Math.Distance.Between(target.x, target.y, startPoint.x, startPoint.y);
-            if (dist > this.beamRange + 100) continue;
+            // Friendly fire filter: player/allies hit enemies, enemy bots hit player/allies
+            const isEnemy = this.ownerTank.team === 'enemy' ? target.team !== 'enemy' : target.team === 'enemy';
+            if (!isEnemy) continue;
 
-            // Distance to line segment
-            const line = new Phaser.Geom.Line(startPoint.x, startPoint.y, endPoint.x, endPoint.y);
-            const circle = new Phaser.Geom.Circle(target.x, target.y, 45); // Approximate tank radius
+            const toTargetX = target.x - shooterX;
+            const toTargetY = target.y - shooterY;
 
-            if (Phaser.Geom.Intersects.LineToCircle(line, circle)) {
+            // Distance along the beam ray direction
+            const forwardDist = toTargetX * dirX + toTargetY * dirY;
+
+            // Target must be in front of shooter (allow slightly behind center down to -20px for overlapping bodies)
+            // and within beam range (with target radius tolerance)
+            if (forwardDist < -20 || forwardDist > this.beamRange + HIT_RADIUS) continue;
+
+            // Perpendicular distance from target center to the beam ray centerline
+            const perpDist = Math.abs(toTargetX * (-dirY) + toTargetY * dirX);
+
+            if (perpDist <= HIT_RADIUS) {
                 target.takeDamage(this.damage);
-                target.applyKnockback(dirX * 3, dirY * 3);
+                target.applyKnockback(dirX * 4, dirY * 4);
             }
         }
 
-        // Spawn authentic lightning projectile (index.js:2646, 3983-3986: LaserT1..8)
-        this.spawnLaserBeamEffect(startPoint, worldAngle, this.beamRange);
+        // Spawn authentic lightning visual beam from muzzle tip (index.js:2646, 3983-3986: LaserT1..8)
+        this.spawnLaserBeamEffect(muzzlePoint, worldAngle, this.beamRange);
     }
 
     private spawnLaserBeamEffect(start: Phaser.Math.Vector2, angleRad: number, length: number): void {

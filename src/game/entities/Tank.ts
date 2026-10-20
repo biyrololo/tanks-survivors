@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { tanksParams } from '../config/tankParams';
-import { CHARACTERISTICS_HULLS, MAX_SPEED } from '../config/characteristics';
+import { CHARACTERISTICS_HULLS, CHARACTERISTICS_GUNS, MAX_SPEED } from '../config/characteristics';
 import type { IGun } from './Guns/Gun';
 import { GunFactory } from './Guns/GunFactory';
+import { CollisionCategories } from '../config/collisionCategories';
 
 export interface ITankProps {
     x: number;
@@ -58,6 +59,8 @@ export default class Tank extends Phaser.GameObjects.Container {
 
     private gunMountOffsetX: number;
     private gunMountOffsetY: number;
+    private _cachedX: number = 0;
+    private _cachedY: number = 0;
 
     // Health & HP bar
     private health: number;
@@ -75,12 +78,59 @@ export default class Tank extends Phaser.GameObjects.Container {
     // Range: [-800 (Frozen Solid) .. +800 (Maximum Burn)]
     public temp: number = 0;
 
+    // Level & Experience Progression (matching index.js:1632-1639)
+    public exp: number = 0;
+    public level: number = 1;
+    public expNeeded: number = 1;
+    public collectRange: number = 140;
+
     public getHealth(): number {
         return this.health;
     }
 
     public getMaxHealth(): number {
         return this.maxHealth;
+    }
+
+    public getExp(): number {
+        return this.exp;
+    }
+
+    public getLevel(): number {
+        return this.level;
+    }
+
+    public getExpNeeded(): number {
+        return this.expNeeded;
+    }
+
+    public getResourceProgress(): number {
+        return this.gun?.getResourceProgress() ?? 0;
+    }
+
+    public getResourceType() {
+        return this.gun?.getResourceType() ?? 'cooldown';
+    }
+
+    public getGun(): IGun {
+        return this.gun;
+    }
+
+    public getGunWorldRotation(): number {
+        return this.rotation + (this.gun ? this.gun.getRotation() : 0);
+    }
+
+    public addExp(amount: number = 1): void {
+        this.exp += amount;
+        while (this.exp >= this.expNeeded) {
+            this.exp -= this.expNeeded;
+            this.level++;
+            this.expNeeded++;
+            // Full health restoration upon level up (index.js:97-98)
+            this.heal(this.maxHealth);
+            this.emit('tank-level-up', { level: this.level, tank: this });
+        }
+        this.emit('tank-exp-changed', { exp: this.exp, expNeeded: this.expNeeded, level: this.level });
     }
 
     public getFreezeFactor(): number {
@@ -97,8 +147,11 @@ export default class Tank extends Phaser.GameObjects.Container {
         this.gunType = props.gunType;
         this.team = props.team ?? 'default';
         this.bulletTexture = props.bulletTexture;
-        this.bulletSpeed = props.bulletSpeed ?? 900;
-        this.damage = props.damage ?? 10;
+
+        const isPlayer = this.team === 'player';
+        const gunChar = CHARACTERISTICS_GUNS[this.gunType] ?? CHARACTERISTICS_GUNS['01'];
+        this.damage = props.damage ?? (isPlayer ? gunChar.playerDamage : gunChar.damage);
+        this.bulletSpeed = props.bulletSpeed ?? 1500;
         this.trackTextures = props.trackTextures;
 
         // Health configuration from characteristics.js
@@ -179,6 +232,9 @@ export default class Tank extends Phaser.GameObjects.Container {
         this.hpBarColor = this.team === 'player' ? 0x00cc44 : 0xee2222;
         this.hpBarBgColor = 0x222222;
 
+        this._cachedX = props.x;
+        this._cachedY = props.y;
+
         this.createHPBar();
         this.createResourceBar();
 
@@ -186,18 +242,75 @@ export default class Tank extends Phaser.GameObjects.Container {
 
         scene.matter.add.gameObject(this, {
             shape: { type: 'rectangle', width: bWidth, height: bHeight },
-            friction: 0.05,
-            frictionAir: 0.15,
-            mass: 1000
+            friction: 0.1,
+            frictionAir: 0.2,
+            restitution: 0,
+            mass: 1000,
+            collisionFilter: {
+                category: CollisionCategories.TANK,
+                mask: CollisionCategories.TANK |
+                    CollisionCategories.WALL |
+                    CollisionCategories.WATER |
+                    CollisionCategories.PROJECTILE |
+                    CollisionCategories.PROJECTILE_BOUNCING |
+                    CollisionCategories.PICKUP
+            }
         });
 
         (this.body as any).gameObject = this;
+
+        // Override fragile Matter x/y getters with null-safe cached getters
+        // to prevent 'Cannot read properties of undefined (reading position)' upon destruction
+        this._cachedX = props.x;
+        this._cachedY = props.y;
+
+        Object.defineProperty(this, 'x', {
+            get: () => {
+                if (this.body?.position) {
+                    this._cachedX = this.body.position.x;
+                }
+                return this._cachedX;
+            },
+            set: (val: number) => {
+                this._cachedX = val;
+                if (this.body) {
+                    this.scene?.matter?.body?.setPosition(this.body, { x: val, y: this.body.position.y });
+                }
+            },
+            configurable: true,
+            enumerable: true
+        });
+
+        Object.defineProperty(this, 'y', {
+            get: () => {
+                if (this.body?.position) {
+                    this._cachedY = this.body.position.y;
+                }
+                return this._cachedY;
+            },
+            set: (val: number) => {
+                this._cachedY = val;
+                if (this.body) {
+                    this.scene?.matter?.body?.setPosition(this.body, { x: this.body.position.x, y: val });
+                }
+            },
+            configurable: true,
+            enumerable: true
+        });
     }
 
     public move(direction: number) {
         if (!this.body) return;
         const freeze = this.getFreezeFactor();
         if (freeze <= 0) return; // Completely frozen in ice
+
+        if (direction === 0) {
+            this.scene.matter.body.setVelocity(this.body, {
+                x: this.body.velocity.x * 0.8,
+                y: this.body.velocity.y * 0.8,
+            });
+            return;
+        }
 
         const angle = this.rotation - Math.PI / 2;
         const currentSpeed = (this.baseMoveSpeed * freeze * direction) / 60;
@@ -213,8 +326,18 @@ export default class Tank extends Phaser.GameObjects.Container {
         const freeze = this.getFreezeFactor();
         if (freeze <= 0) return;
 
+        if (direction === 0) {
+            this.scene.matter.body.setAngularVelocity(this.body, 0);
+            return;
+        }
+
         const angularSpeed = (direction * this.baseRotationSpeed * freeze) / 60;
         this.scene.matter.body.setAngularVelocity(this.body, angularSpeed);
+    }
+
+    public stopRotation(): void {
+        if (!this.body) return;
+        this.scene.matter.body.setAngularVelocity(this.body, 0);
     }
 
     public rotateGun(direction: number, delta: number) {
@@ -241,6 +364,10 @@ export default class Tank extends Phaser.GameObjects.Container {
 
     public equipGun(newGunType: string): void {
         this.gunType = newGunType;
+        const isPlayer = this.team === 'player';
+        const gunChar = CHARACTERISTICS_GUNS[newGunType] ?? CHARACTERISTICS_GUNS['01'];
+        this.damage = isPlayer ? gunChar.playerDamage : gunChar.damage;
+
         const currentAngle = this.gun.getRotation();
         this.remove(this.gun as unknown as Phaser.GameObjects.GameObject, true);
 
@@ -307,7 +434,9 @@ export default class Tank extends Phaser.GameObjects.Container {
         tempMatrix?: Phaser.GameObjects.Components.TransformMatrix,
         parentMatrix?: Phaser.GameObjects.Components.TransformMatrix
     ): Phaser.GameObjects.Components.TransformMatrix {
-        (this as any)._rotation = this.rotation;
+        if (this.body) {
+            (this as any)._rotation = this.rotation;
+        }
         return super.getWorldTransformMatrix(tempMatrix, parentMatrix);
     }
 
@@ -329,11 +458,18 @@ export default class Tank extends Phaser.GameObjects.Container {
     }
 
     public takeDamage(amount: number) {
+        if (!this.active || this.health <= 0) return;
         this.health -= amount;
         if (this.health <= 0) {
             this.health = 0;
+            this.setActive(false);
+            this.setVisible(false);
             this.emit('tank-destroyed', this);
-            this.destroy(true);
+            this.scene?.time.delayedCall(0, () => {
+                if (this.scene) {
+                    this.destroy(true);
+                }
+            });
             return;
         }
         this.updateHPBar();
@@ -359,7 +495,9 @@ export default class Tank extends Phaser.GameObjects.Container {
     }
 
     public update(_time: number, delta: number) {
-        (this as any)._rotation = this.rotation;
+        if (!this.active || !this.body || !this.scene) return;
+        this._cachedX = this.body.position.x;
+        this._cachedY = this.body.position.y;
         this.gun.update(_time, delta);
         this.updateResourceBar();
 

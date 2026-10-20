@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { CollisionCategories } from '../config/collisionCategories';
 
 export interface IProjectileProps {
     x: number;
@@ -63,7 +64,11 @@ export default class Projectile extends Phaser.GameObjects.Sprite {
             friction: 0,
             frictionAir: 0,
             frictionStatic: 0,
-            inertia: Infinity
+            inertia: Infinity,
+            collisionFilter: {
+                category: isSensor ? CollisionCategories.PROJECTILE : CollisionCategories.PROJECTILE_BOUNCING,
+                mask: CollisionCategories.TANK | CollisionCategories.WALL
+            }
         });
 
         (this.body as any).gameObject = this;

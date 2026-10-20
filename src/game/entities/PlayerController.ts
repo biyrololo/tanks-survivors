@@ -48,6 +48,8 @@ export default class PlayerController {
     }
 
     public update(delta: number) {
+        if (!this.tank.active || !this.tank.body) return;
+
         if (this.keys.W.isDown) {
             this.tank.move(1);
         }
@@ -58,10 +60,10 @@ export default class PlayerController {
 
         if (this.keys.A.isDown) {
             this.tank.rotateHull(-1);
-        }
-
-        if (this.keys.D.isDown) {
+        } else if (this.keys.D.isDown) {
             this.tank.rotateHull(1);
+        } else {
+            this.tank.stopRotation();
         }
 
         if (this.keys.Z.isDown || this.keys.LEFT.isDown) {

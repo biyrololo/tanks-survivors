@@ -35,8 +35,9 @@ export default class Flamethrower extends BaseGun {
         super(scene, props, textureKey);
 
         const char = CHARACTERISTICS_GUNS['04'];
-        this.damagePerSec = (props.damage ?? char.playerDamage) * 60;
-        this.maxFuel = char.playerReloadTimeFrames;
+        const isPlayer = props.ownerTank?.team === 'player';
+        this.damagePerSec = (props.damage ?? (isPlayer ? char.playerDamage : char.damage)) * 60;
+        this.maxFuel = isPlayer ? char.playerReloadTimeFrames : char.reloadTimeFrames;
         this.currentFuel = this.maxFuel;
 
         if (props.range) this.flameRange = props.range;
