@@ -9,10 +9,13 @@ import {
     type ISpawnPoint
 } from './mapData';
 
+import NavigationGrid from './NavigationGrid';
+
 export default class MapManager {
     private scene: Phaser.Scene;
     public wallBodies: MatterJS.BodyType[] = [];
     public waterBodies: MatterJS.BodyType[] = [];
+    public navigationGrid: NavigationGrid = new NavigationGrid();
 
     constructor(scene: Phaser.Scene) {
         this.scene = scene;
@@ -23,9 +26,6 @@ export default class MapManager {
 
         // Set camera bounds to the exact dimensions of map2.png
         cameras.main.setBounds(0, 0, MAP_WIDTH, MAP_HEIGHT);
-
-        // Set Matter physics world bounds
-        matter.world.setBounds(0, 0, MAP_WIDTH, MAP_HEIGHT);
 
         // 1. Create Outer Boundary Walls (thick safety margins around edges)
         const wallThickness = 64;

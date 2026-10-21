@@ -240,12 +240,20 @@ export default class Tank extends Phaser.GameObjects.Container {
 
         scene.add.existing(this);
 
+        // Authentic armored tank mass: 8,000 to 20,000 kg depending on hull armor/health
+        // Hull 04 (light scout): ~9,800 kg; Hull 01 (medium): ~15,600 kg; Hull 02 (heavy dreadnought): ~20,000 kg
+        const tankMass = this.team === 'player'
+            ? 12000 + (baseHp / 330) * 8000
+            : 8000 + (baseHp / 330) * 12000;
+
         scene.matter.add.gameObject(this, {
             shape: { type: 'rectangle', width: bWidth, height: bHeight },
-            friction: 0.1,
-            frictionAir: 0.2,
+            chamfer: { radius: 10 },
+            friction: 0.6,
+            frictionStatic: 0.8,
+            frictionAir: 0.25,
             restitution: 0,
-            mass: 1000,
+            mass: tankMass,
             collisionFilter: {
                 category: CollisionCategories.TANK,
                 mask: CollisionCategories.TANK |
@@ -258,6 +266,10 @@ export default class Tank extends Phaser.GameObjects.Container {
         });
 
         (this.body as any).gameObject = this;
+
+        // Set rotational inertia proportional to mass so edge bumps don't whip the tank around
+        const inertia = (tankMass * (bWidth * bWidth + bHeight * bHeight)) / 12;
+        this.scene.matter.body.setInertia(this.body, inertia * 2.0);
 
         // Override fragile Matter x/y getters with null-safe cached getters
         // to prevent 'Cannot read properties of undefined (reading position)' upon destruction
@@ -500,6 +512,29 @@ export default class Tank extends Phaser.GameObjects.Container {
         this._cachedY = this.body.position.y;
         this.gun.update(_time, delta);
         this.updateResourceBar();
+
+        // Strict velocity and angular velocity limits to completely prevent fling/slingshot from wall wedging
+        if (this.body) {
+            const maxLinear = (this.baseMoveSpeed * 1.3) / 60;
+            const vx = this.body.velocity.x;
+            const vy = this.body.velocity.y;
+            const curSpeed = Math.hypot(vx, vy);
+            if (curSpeed > maxLinear) {
+                const scale = maxLinear / curSpeed;
+                this.scene.matter.body.setVelocity(this.body, {
+                    x: vx * scale,
+                    y: vy * scale
+                });
+            }
+
+            const maxAngular = (this.baseRotationSpeed * 1.25) / 60;
+            if (Math.abs(this.body.angularVelocity) > maxAngular) {
+                this.scene.matter.body.setAngularVelocity(
+                    this.body,
+                    Math.sign(this.body.angularVelocity) * maxAngular
+                );
+            }
+        }
 
         const dtFrames = delta / (1000 / 60);
 

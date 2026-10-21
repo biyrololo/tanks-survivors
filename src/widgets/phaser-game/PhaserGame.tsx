@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef } from "react";
 
 import { startGame } from "@/game/config/phaserConfig";
 import { HUD } from "../hud/HUD";
+import { MobileControls } from "../mobile-controls/MobileControls";
 
 import styles from './PhaserGame.module.css';
 
@@ -33,6 +34,7 @@ export default function PhaserGame({ scenes }: PhaserGameProps) {
         <div style={{ position: 'relative', width: '100vw', height: '100dvh', overflow: 'hidden' }}>
             <div id="game-container" className={styles['game-container']}></div>
             <HUD />
+            <MobileControls />
         </div>
     );
 }

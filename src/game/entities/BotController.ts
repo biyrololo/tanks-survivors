@@ -1,18 +1,24 @@
 import Phaser from 'phaser';
 import type Tank from './Tank';
+import type NavigationGrid from '../map/NavigationGrid';
+import type { IWaypoint } from '../map/NavigationGrid';
 
 export default class BotController {
     public tank: Tank;
+    private navGrid?: NavigationGrid;
     private target?: Tank;
 
-    private goBackTime: number = 0;
+    private currentPath: IWaypoint[] = [];
+    private pathTimer: number = 0;
 
+    private goBackTime: number = 0;
     private stuckCheckTimer: number = 0;
     private lastX: number = 0;
     private lastY: number = 0;
 
-    constructor(tank: Tank) {
+    constructor(tank: Tank, navGrid?: NavigationGrid) {
         this.tank = tank;
+        this.navGrid = navGrid;
         this.lastX = tank.x;
         this.lastY = tank.y;
     }
@@ -23,6 +29,7 @@ export default class BotController {
     public onCollisionWithObstacle(): void {
         if (this.goBackTime <= 0) {
             this.goBackTime = 600; // 0.6s reverse to disengage from wall
+            this.currentPath = []; // Invalidate current path to recalculate after reversing
         }
     }
 
@@ -77,26 +84,72 @@ export default class BotController {
         if (!this.target) {
             this.tank.setTrigger(false);
             this.tank.stopRotation();
+            this.tank.move(0);
             return;
         }
 
         const dx = this.target.x - this.tank.x;
         const dy = this.target.y - this.tank.y;
-        const dist = Phaser.Math.Distance.Between(this.tank.x, this.tank.y, this.target.x, this.target.y);
+        const dist = Math.hypot(dx, dy);
+        const directAimAngle = Math.atan2(dy, dx) + Math.PI / 2;
 
-        // Target angle in radians (0 rad = "up")
-        const targetAngle = Math.atan2(dy, dx) + Math.PI / 2;
-
-        // 2. Hull Steering & Movement
-        const hullDiff = Phaser.Math.Angle.Wrap(targetAngle - this.tank.rotation);
-        const isFacingTarget = Math.abs(hullDiff) < 0.6; // ~35 degrees
         const { min, max, attackRange } = this.getCombatDistances();
 
-        // Stuck Detection: only if attempting to drive towards a distant target and blocked by obstacle
+        // 2. Obstacle & Line of Sight Awareness
+        const hasLoS = this.navGrid
+            ? this.navGrid.hasLineOfSight(this.tank.x, this.tank.y, this.target.x, this.target.y)
+            : true;
+
+        let desiredHeading = directAimAngle;
+        let moveAction: 'forward' | 'backward' | 'stop' = 'stop';
+
+        if (hasLoS) {
+            // Direct line of sight: engage directly according to weapon combat distance
+            this.currentPath = [];
+            desiredHeading = directAimAngle;
+
+            if (dist > max) {
+                moveAction = 'forward';
+            } else if (dist < min) {
+                moveAction = 'backward';
+            } else {
+                moveAction = 'stop';
+            }
+        } else {
+            // Player is behind a wall/building: navigate through corridors using NavigationGrid
+            this.pathTimer += delta;
+            if (this.currentPath.length === 0 || this.pathTimer >= 1000) {
+                this.pathTimer = 0;
+                if (this.navGrid) {
+                    this.currentPath = this.navGrid.findPath(this.tank.x, this.tank.y, this.target.x, this.target.y);
+                }
+            }
+
+            // Advance waypoints once reached
+            while (this.currentPath.length > 0) {
+                const wpDist = Math.hypot(this.currentPath[0].x - this.tank.x, this.currentPath[0].y - this.tank.y);
+                if (wpDist < 48) {
+                    this.currentPath.shift();
+                } else {
+                    break;
+                }
+            }
+
+            const nextPt = this.currentPath[0] ?? { x: this.target.x, y: this.target.y };
+            const ndx = nextPt.x - this.tank.x;
+            const ndy = nextPt.y - this.tank.y;
+            desiredHeading = Math.atan2(ndy, ndx) + Math.PI / 2;
+            moveAction = 'forward';
+        }
+
+        // 3. Hull Steering & Movement: "сначала поворачивать, а затем ехать!"
+        const hullDiff = Phaser.Math.Angle.Wrap(desiredHeading - this.tank.rotation);
+
+        // Stuck Detection: only if attempting to move forward towards target and blocked
         this.stuckCheckTimer += delta;
         if (this.stuckCheckTimer >= 1500) {
             const movedDist = Phaser.Math.Distance.Between(this.tank.x, this.tank.y, this.lastX, this.lastY);
-            if (dist > max && isFacingTarget && movedDist < 15 && this.goBackTime <= 0) {
+            if (moveAction === 'forward' && movedDist < 15 && this.goBackTime <= 0) {
                 this.onCollisionWithObstacle();
             }
             this.lastX = this.tank.x;
@@ -106,42 +159,43 @@ export default class BotController {
 
         if (this.goBackTime > 0) {
             this.goBackTime -= delta;
-            this.tank.move(-0.6); // Reverse backing up
+            this.tank.move(-0.6); // Reverse backing away from wall
             this.tank.stopRotation(); // Back up cleanly without spinning
         } else {
             // Smooth critically-damped hull steering:
-            // Deadzone of ~5 degrees (0.09 rad) prevents micro-jitter
-            if (Math.abs(hullDiff) < 0.09) {
+            // Deadzone of ~4 degrees (0.07 rad) prevents micro-jitter
+            if (Math.abs(hullDiff) < 0.07) {
                 this.tank.stopRotation();
             } else {
                 const dir = hullDiff > 0 ? 1 : -1;
-                // Proportional easing factor to decelerate into heading without overshoot
                 const turnFactor = Math.min(1.0, Math.abs(hullDiff) / 0.25);
                 this.tank.rotateHull(dir * turnFactor);
             }
 
-            // Tactical range maintenance (no point-blank ramming):
-            if (dist > max) {
-                // Beyond ideal range: advance towards target
-                if (isFacingTarget) {
-                    this.tank.move(0.85);
-                } else if (Math.abs(hullDiff) < 1.2) {
-                    this.tank.move(0.3); // Creep slowly while turning
-                } else {
-                    this.tank.move(0); // Turn in place smoothly before advancing
-                }
-            } else if (dist < min) {
-                // Too close to target: back up to maintain firing distance
-                this.tank.move(-0.5);
-            } else {
-                // In optimal firing zone: hold position, do not ram!
+            // CRITICAL: Turn FIRST, and ONLY drive once aligned with heading!
+            // If angle difference is greater than ~12 degrees (0.22 rad), tank turns on the spot!
+            const isAligned = Math.abs(hullDiff) <= 0.22;
+
+            if (!isAligned) {
+                // Still turning to face the waypoint/target: hold still!
                 this.tank.move(0);
+            } else {
+                // Hull is properly facing the heading: drive forward or backward or hold
+                if (moveAction === 'forward') {
+                    this.tank.move(0.85);
+                } else if (moveAction === 'backward') {
+                    this.tank.move(-0.5);
+                } else {
+                    this.tank.move(0); // In optimal firing zone
+                }
             }
         }
 
-        // 3. Smooth Independent Turret Aiming
+        // 4. Smooth Independent Turret Aiming
+        // When target is in sight: aim at target; when navigating corridors: aim along movement heading
+        const aimAngle = hasLoS ? directAimAngle : desiredHeading;
         const currentGunWorldAngle = this.tank.getGunWorldRotation();
-        const gunDiff = Phaser.Math.Angle.Wrap(targetAngle - currentGunWorldAngle);
+        const gunDiff = Phaser.Math.Angle.Wrap(aimAngle - currentGunWorldAngle);
 
         // Deadzone of ~4 degrees (0.07 rad) stops micro-aim jitter
         if (Math.abs(gunDiff) < 0.07) {
@@ -152,11 +206,12 @@ export default class BotController {
             this.tank.rotateGun(dir * turnSpeed, delta);
         }
 
-        // 4. Weapon Firing Logic
+        // 5. Weapon Firing Logic
+        // Only fire when target is directly visible (hasLoS), turret is aimed, and in attack range!
         const isAimAligned = Math.abs(gunDiff) < 0.25; // ~14 degrees alignment
         const isInRange = dist <= attackRange;
 
-        if (isAimAligned && isInRange) {
+        if (hasLoS && isAimAligned && isInRange) {
             this.tank.setTrigger(true);
         } else {
             this.tank.setTrigger(false);

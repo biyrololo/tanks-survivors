@@ -118,7 +118,7 @@ export default class WaveSpawner {
             team: team
         });
 
-        const controller = new BotController(botTank);
+        const controller = new BotController(botTank, this.mapManager.navigationGrid);
         this.spawnedBots.push({ tank: botTank, controller });
 
         this.scene.events.emit('bot-spawned', botTank);
